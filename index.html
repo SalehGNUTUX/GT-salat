@@ -21,6 +21,7 @@
     <meta name="msapplication-TileImage" content="icons/icon-144x144.png">
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
         :root {
             --primary-color: #1a5e63;
             --secondary-color: #4cd7d0;
@@ -297,6 +298,11 @@
             text-align: center;
             padding: 10px 5px;
             position: relative;
+            min-height: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
 
         .calendar-cell.day-header {
@@ -333,6 +339,27 @@
             height: 5px;
             background: var(--secondary-color);
             border-radius: 50%;
+        }
+
+        .event-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 10;
+        }
+
+        .calendar-cell:hover .event-tooltip {
+            opacity: 1;
         }
 
         /* Settings Panel */
@@ -487,6 +514,11 @@
                 justify-content: center;
                 margin-bottom: 15px;
             }
+            
+            .calendar-cell {
+                min-height: 50px;
+                padding: 5px 2px;
+            }
         }
 
         /* RTL/LTR Support */
@@ -513,6 +545,35 @@
 
         body[dir="ltr"] select.form-control {
             background-position: left 15px center;
+        }
+        
+        /* Sacred Month Indicator */
+        .sacred-month {
+            border: 1px solid var(--secondary-color) !important;
+        }
+        
+        /* Loading Animation */
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        
+        .loading::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            margin: -10px 0 0 -10px;
+            border: 2px solid var(--secondary-color);
+            border-radius: 50%;
+            border-right-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -625,68 +686,6 @@
         </footer>
     </div>
 
-    <!-- ملفات PWA -->
-    <script>
-        // ملف manifest.json
-        const manifest = {
-            "name": "GT-Salat - مواقيت الصلاة",
-            "short_name": "GT-Salat",
-            "description": "تطبيق مواقيت الصلاة والتقويم الإسلامي مع التقويم الهجري والمناسبات الدينية",
-            "start_url": "/",
-            "display": "standalone",
-            "background_color": "#1a5e63",
-            "theme_color": "#1a5e63",
-            "orientation": "portrait",
-            "icons": [
-                {
-                    "src": "icons/icon-72x72.png",
-                    "sizes": "72x72",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-96x96.png",
-                    "sizes": "96x96",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-128x128.png",
-                    "sizes": "128x128",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-144x144.png",
-                    "sizes": "144x144",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-152x152.png",
-                    "sizes": "152x152",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-192x192.png",
-                    "sizes": "192x192",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-384x384.png",
-                    "sizes": "384x384",
-                    "type": "image/png"
-                },
-                {
-                    "src": "icons/icon-512x512.png",
-                    "sizes": "512x512",
-                    "type": "image/png"
-                }
-            ]
-        };
-
-        // إنشاء ملف manifest.json ديناميكيًا
-        const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-        const manifestURL = URL.createObjectURL(blob);
-        document.querySelector('link[rel="manifest"]').href = manifestURL;
-    </script>
-
     <script>
         // الثوابت والإعدادات
         const DEFAULT_CITY = "مكة المكرمة";
@@ -726,7 +725,11 @@
                 settingsSaved: "تم حفظ الإعدادات!",
                 changesCancelled: "تم إلغاء التغييرات",
                 gregorianDate: "التاريخ الميلادي",
-                hijriDate: "التاريخ الهجري"
+                hijriDate: "التاريخ الهجري",
+                installPrompt: "تثبيت التطبيق للوصول السريع",
+                installLater: "لاحقاً",
+                installConfirm: "تثبيت",
+                updateAvailable: "يتوفر تحديث جديد. هل تريد تحديث التطبيق؟"
             },
             en: {
                 loading: "Loading...",
@@ -736,7 +739,11 @@
                 settingsSaved: "Settings saved!",
                 changesCancelled: "Changes cancelled",
                 gregorianDate: "Gregorian Date",
-                hijriDate: "Hijri Date"
+                hijriDate: "Hijri Date",
+                installPrompt: "Install app for quick access",
+                installLater: "Later",
+                installConfirm: "Install",
+                updateAvailable: "A new update is available. Would you like to update the app?"
             }
         };
 
@@ -806,13 +813,31 @@
         function setupPWA() {
             // تسجيل Service Worker
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
+                navigator.serviceWorker.register('./sw.js')
                     .then(registration => {
                         console.log('Service Worker registered with scope:', registration.scope);
+                        
+                        // التحقق من وجود تحديثات
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            console.log('New service worker found!');
+                            
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // هناك تحديث متاح
+                                    showUpdatePrompt();
+                                }
+                            });
+                        });
                     })
                     .catch(error => {
                         console.log('Service Worker registration failed:', error);
                     });
+
+                // التحقق من حالة Service Worker
+                navigator.serviceWorker.ready.then(registration => {
+                    console.log('Service Worker is ready');
+                });
             }
 
             // إظهار موجه التثبيت
@@ -821,9 +846,21 @@
                 e.preventDefault();
                 deferredPrompt = e;
                 setTimeout(() => {
-                    installPromptEl.classList.add('show');
-                }, 3000);
+                    showInstallPrompt();
+                }, 5000);
             });
+
+            // إظهار موجه التحديث
+            function showUpdatePrompt() {
+                if (confirm(translations[currentLanguage].updateAvailable)) {
+                    window.location.reload();
+                }
+            }
+
+            // إظهار موجه التثبيت
+            function showInstallPrompt() {
+                installPromptEl.classList.add('show');
+            }
 
             installConfirmBtn.addEventListener('click', async () => {
                 if (deferredPrompt) {
@@ -831,6 +868,7 @@
                     const { outcome } = await deferredPrompt.userChoice;
                     if (outcome === 'accepted') {
                         console.log('User accepted the install prompt');
+                        // تتبع التحليلات هنا
                     } else {
                         console.log('User dismissed the install prompt');
                     }
@@ -841,6 +879,13 @@
 
             installCancelBtn.addEventListener('click', () => {
                 installPromptEl.classList.remove('show');
+            });
+
+            // إخفاء موجه التثبيت عند التثبيت
+            window.addEventListener('appinstalled', (evt) => {
+                console.log('App was installed');
+                installPromptEl.classList.remove('show');
+                deferredPrompt = null;
             });
         }
 
@@ -872,7 +917,7 @@
 
             fetchPrayerTimes(currentCoords.lat, currentCoords.lng, currentMethod);
 
-            alert(translations[currentLanguage].settingsSaved);
+            showNotification(translations[currentLanguage].settingsSaved);
         }
 
         // تعبئة قائمة طرق الحساب
@@ -944,14 +989,16 @@
             generateHijriCalendar(currentCalendarDate);
 
             // حفظ الإعدادات
-            saveSettings();
+            const settings = JSON.parse(localStorage.getItem('gtSalatSettings') || '{}');
+            settings.language = lang;
+            localStorage.setItem('gtSalatSettings', JSON.stringify(settings));
         }
 
         // إلغاء الإعدادات
         function cancelSettings() {
             prayerLocationInput.value = currentLocation;
             prayerMethodSelect.value = currentMethod;
-            alert(translations[currentLanguage].changesCancelled);
+            showNotification(translations[currentLanguage].changesCancelled);
         }
 
         // الحصول على موقع المستخدم
@@ -967,14 +1014,14 @@
                         fetchPrayerTimes(currentCoords.lat, currentCoords.lng, currentMethod);
                     },
                     error => {
-                        alert(translations[currentLanguage].locationError);
+                        showNotification(translations[currentLanguage].locationError);
                         currentCoords = { lat: 21.3891, lng: 39.8579 }; // مكة المكرمة
                         prayerLocationInput.value = DEFAULT_CITY;
                         fetchPrayerTimes(currentCoords.lat, currentCoords.lng, currentMethod);
                     }
                 );
             } else {
-                alert(translations[currentLanguage].geolocationError);
+                showNotification(translations[currentLanguage].geolocationError);
                 currentCoords = { lat: 21.3891, lng: 39.8579 }; // مكة المكرمة
                 prayerLocationInput.value = DEFAULT_CITY;
                 fetchPrayerTimes(currentCoords.lat, currentCoords.lng, currentMethod);
@@ -1162,13 +1209,17 @@
                 if (ISLAMIC_EVENTS[hijriDate]) {
                     const eventIndicator = document.createElement('div');
                     eventIndicator.className = 'event-indicator';
-                    eventIndicator.title = ISLAMIC_EVENTS[hijriDate][currentLanguage];
                     dayCell.appendChild(eventIndicator);
+                    
+                    const eventTooltip = document.createElement('div');
+                    eventTooltip.className = 'event-tooltip';
+                    eventTooltip.textContent = ISLAMIC_EVENTS[hijriDate][currentLanguage];
+                    dayCell.appendChild(eventTooltip);
                 }
                 
                 // تمييز الأشهر الحرم
                 if (SACRED_MONTHS.includes(hijriDay.month)) {
-                    dayCell.style.border = '1px solid var(--secondary-color)';
+                    dayCell.classList.add('sacred-month');
                 }
                 
                 calendarGridEl.appendChild(dayCell);
@@ -1178,7 +1229,7 @@
         // تحويل التاريخ الميلادي إلى هجري
         function convertToHijri(gregorianDate) {
             // هذه دالة مبسطة للتحويل، يمكن استبدالها بمكتبة أكثر دقة
-            const hijriAdjust = -1; // تعديل للتقريب
+            const hijriAdjust = 0; // تعديل للتقريب
             const startHijri = 622; // سنة الهجرة
             const startGregorian = new Date(622, 6, 16); // 16 يوليو 622م
             
@@ -1208,6 +1259,43 @@
                 month: month,
                 day: day
             };
+        }
+
+        // عرض الإشعارات
+        function showNotification(message) {
+            // إنشاء عنصر الإشعار
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: var(--accent-color);
+                color: white;
+                padding: 15px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 1000;
+                transform: translateX(150%);
+                transition: transform 0.3s ease;
+                max-width: 300px;
+                word-wrap: break-word;
+            `;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            // إظهار الإشعار
+            setTimeout(() => {
+                notification.style.transform = 'translateX(0)';
+            }, 100);
+            
+            // إخفاء الإشعار بعد 3 ثوان
+            setTimeout(() => {
+                notification.style.transform = 'translateX(150%)';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
         }
 
         // بدء التطبيق عند تحميل الصفحة
